@@ -56,6 +56,10 @@ class FindingStatus(StrEnum):
     PATCHED = "patched"
     VERIFIED = "verified"
     PR_OPENED = "pr_opened"
+    #: The graph is suspended on a human-approval gate. Nothing was written; the run ended
+    #: with this finding waiting for a person. Distinct from ESCALATED, which means the
+    #: fleet gave up on its own.
+    AWAITING_APPROVAL = "awaiting_approval"
     #: Handed to a human: major version bump, no test coverage, or Guardian flagged it.
     ESCALATED = "escalated"
     DISMISSED = "dismissed"

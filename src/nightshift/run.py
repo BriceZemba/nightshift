@@ -22,11 +22,13 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 import structlog
+from google.adk import Runner, Workflow
+from google.adk.sessions import InMemorySessionService
 
+from nightshift.agents.graph import FindingContext, build_finding_workflow
 from nightshift.agents.guardian import Guardian
 from nightshift.agents.patcher import Patcher
 from nightshift.agents.reporter import Reporter
-from nightshift.agents.routing import APPROVE, ESCALATE, RETRY, verify_route
 from nightshift.agents.triager import Triager
 from nightshift.agents.verifier import Verifier
 from nightshift.config import Settings, get_settings
@@ -41,7 +43,7 @@ from nightshift.models import (
     Repo,
     RunRecord,
 )
-from nightshift.policy import PolicyViolation, assert_repo_allowed, requires_human_approval
+from nightshift.policy import PolicyViolation, assert_repo_allowed
 from nightshift.sources.manifests import scan_files
 
 log = structlog.get_logger(__name__)
@@ -86,6 +88,10 @@ class NightshiftRun:
         self.patcher = Patcher(self.llm)
         self.verifier = verifier or Verifier()
         self.reporter = Reporter(github, store, self.settings)
+
+        #: Pull request slots consumed this run. Separate from ``record.prs_opened``,
+        #: which is a tally of outcomes; this one gates the writes as they happen.
+        self._pr_slots_used = 0
 
         self.record = RunRecord(
             id=f"run-{datetime.now(UTC):%Y%m%d-%H%M%S}-{uuid.uuid4().hex[:6]}",
@@ -218,16 +224,64 @@ class NightshiftRun:
         advisories: dict[str, Advisory],
         findings: list[Finding],
     ) -> None:
+        """Run every finding through the ADK graph.
+
+        The topology is built once and reused; only the payload differs per finding. That
+        is the point of a static graph, and it keeps the fan-out here rather than smearing
+        it across the agent definitions.
+        """
         sibling_packages = {name: s.package_names for name, s in snapshots.items()}
+
+        # The graph is invoked with a finding id, not the context itself, because ADK's
+        # entry points accept only text. This registry is what the id is exchanged for.
+        contexts: dict[str, FindingContext] = {}
+
+        # ADK validates the context afresh at every node, so each node works on a copy and
+        # mutations never reach the object passed in. Terminal nodes therefore report the
+        # finished finding through this callback rather than by returning it.
+        results: dict[str, Finding] = {}
+
+        async def on_complete(finding: Finding) -> None:
+            results[finding.id] = finding
+
+        workflow = build_finding_workflow(
+            guardian=self.guardian,
+            triager=self.triager,
+            patcher=self.patcher,
+            verifier=self.verifier,
+            reporter=self.reporter,
+            settings=self.settings,
+            context_lookup=contexts.__getitem__,
+            on_decision=self._log_decision,
+            on_complete=on_complete,
+            reserve_pr_slot=self._reserve_pr_slot,
+        )
+
         semaphore = asyncio.Semaphore(4)
 
         async def handle(finding: Finding) -> None:
             async with semaphore:
+                snapshot = snapshots[finding.repo]
+                ctx = FindingContext(
+                    finding=finding,
+                    advisory=advisories[finding.advisory_id],
+                    sources=snapshot.sources,
+                    manifests=snapshot.manifests,
+                    default_branch=snapshot.repo.default_branch,
+                    repo_has_tests=snapshot.repo.has_tests,
+                    test_command=snapshot.repo.test_command,
+                    sibling_packages={
+                        name: packages
+                        for name, packages in sibling_packages.items()
+                        if name != finding.repo
+                    },
+                )
+                contexts[finding.id] = ctx
+
+                await self._log_decision(finding, "watcher", f"matched {finding.advisory_id}")
+
                 try:
-                    await self._process_one(
-                        finding, snapshots[finding.repo], advisories[finding.advisory_id],
-                        {k: v for k, v in sibling_packages.items() if k != finding.repo},
-                    )
+                    await self._run_graph(workflow, ctx)
                 except PolicyViolation as exc:
                     # A boundary crossing aborts this finding. It is never retried into
                     # success, and it never fails the whole run.
@@ -235,134 +289,72 @@ class NightshiftRun:
                     log.warning("run.policy_violation", finding_id=finding.id, error=str(exc))
                     self.record.failed += 1
                     await self.store.upsert_finding(finding)
+                    return
+
+                final = results.get(finding.id)
+                if final is None:
+                    # No terminal node ran, which means the graph suspended on the
+                    # human-approval gate. ``ask_human`` is a plain generator and cannot
+                    # await the completion callback, so the outcome is inferred here.
+                    final = finding
+                    final.status = FindingStatus.AWAITING_APPROVAL
+
+                self._tally(final)
+                await self.store.upsert_finding(final)
 
         await asyncio.gather(*(handle(f) for f in findings))
 
-    async def _process_one(
-        self,
-        finding: Finding,
-        snapshot: RepoSnapshot,
-        advisory: Advisory,
-        siblings: dict[str, set[str]],
-    ) -> None:
-        await self._log_decision(finding, "watcher", f"matched {advisory.id}")
+    async def _run_graph(self, workflow: Workflow, ctx: FindingContext) -> None:
+        """Execute one finding through the graph.
 
-        if advisory.id in getattr(self, "_flagged_advisories", set()):
-            finding.status = FindingStatus.ESCALATED
-            finding.escalation_reason = "Guardian flagged untrusted content in this advisory"
-            self.record.escalated += 1
-            await self._log_decision(finding, "guardian", "flagged; escalated without patching")
-            await self.store.upsert_finding(finding)
-            return
+        A fresh Runner per finding keeps sessions isolated, which matters because findings
+        are processed concurrently. Construction is cheap.
 
-        # --- triage: the 180 -> 6 step ---
-        verdict = self.triager.triage(
-            advisory, finding.dependency, snapshot.sources, sibling_repos=siblings
-        )
-        finding.verdict = verdict
-        finding.status = FindingStatus.TRIAGED
-        await self._log_decision(
-            finding, "triager", f"{verdict.reachability} ({len(verdict.call_path)} sites)"
+        The outcome arrives through the graph's ``on_complete`` callback rather than a
+        return value here, because node outputs are serialized and the workflow's final
+        event carries a plain dict.
+        """
+        runner = Runner(
+            app_name="nightshift",
+            agent=workflow,
+            session_service=InMemorySessionService(),
+            auto_create_session=True,
         )
 
-        if verdict.reachability is Reachability.NOT_REACHABLE:
-            finding.status = FindingStatus.DISMISSED
-            self.record.dismissed += 1
-            await self.store.upsert_finding(finding)
-            return
+        # The payload is the finding id: ADK wraps the argument in a text Content part, so
+        # it cannot carry an object. The entry node exchanges the id for the full context.
+        await runner.run_debug(ctx.finding.id, quiet=True)
 
-        self.record.findings_reachable += 1
+    def _reserve_pr_slot(self) -> bool:
+        """Claim one of the run's allowed pull requests, or refuse.
 
-        # --- critique loop: patch until verified, or give up and escalate ---
-        manifest = snapshot.manifests.get(finding.dependency.manifest_path, "")
+        Deliberately synchronous. Findings are processed concurrently, so a gate that
+        merely *read* a counter would let every pending finding through before any of them
+        had opened anything; the check and the increment have to happen without an await
+        between them.
 
-        while True:
-            attempt = self.patcher.patch(finding, advisory, manifest)
+        Conservative by design: a reserved slot is not returned if the pull request later
+        fails, so the run can under-open by a slot rather than over-open. For a flood guard
+        that is the right direction to be wrong in.
+        """
+        if self._pr_slots_used >= self.settings.max_prs_per_run:
+            return False
+        self._pr_slots_used += 1
+        return True
 
-            verification = self.verifier.verify(
-                snapshot.sources, attempt.diff, snapshot.repo.test_command
-            )
-            attempt.tests_passed = verification.passed
-            attempt.test_output = verification.output
-            if verification.skipped_reason:
-                attempt.error = verification.skipped_reason
+    def _tally(self, finding: Finding) -> None:
+        """Fold one finished finding into the run summary."""
+        if finding.verdict and finding.verdict.reachability is not Reachability.NOT_REACHABLE:
+            self.record.findings_reachable += 1
 
-            finding.attempts.append(attempt)
-            await self._log_decision(
-                finding,
-                "patcher/verifier",
-                f"attempt {attempt.attempt} ({attempt.strategy}) "
-                f"{'passed' if attempt.tests_passed else 'failed'}",
-            )
-
-            route = verify_route(finding, self.settings.max_patch_attempts)
-            if route != RETRY:
-                break
-
-        if route == ESCALATE:
-            finding.status = FindingStatus.ESCALATED
-            finding.escalation_reason = (
-                finding.escalation_reason
-                or f"No verified patch after {len(finding.attempts)} attempt(s)"
-            )
-            self.record.escalated += 1
-            await self.store.upsert_finding(finding)
-            return
-
-        # --- approval gate ---
-        latest = finding.attempts[-1]
-        affected = advisory.affects(finding.dependency.name, finding.dependency.ecosystem)
-        proposed = affected.first_fixed_version() if affected else None
-
-        reason = requires_human_approval(
-            finding,
-            proposed_version=proposed,
-            repo_has_tests=snapshot.repo.has_tests,
-            guardian_flagged=False,
-        )
-
-        if reason:
-            finding.status = FindingStatus.ESCALATED
-            finding.escalation_reason = reason
-            self.record.escalated += 1
-            await self._log_decision(finding, "policy", f"human approval required: {reason}")
-            await self.store.upsert_finding(finding)
-            return
-
-        if self.record.prs_opened >= self.settings.max_prs_per_run:
-            # A hard ceiling so a bug cannot flood a repository, however confident the
-            # fleet is.
-            finding.status = FindingStatus.ESCALATED
-            finding.escalation_reason = (
-                f"Per-run pull request limit ({self.settings.max_prs_per_run}) reached"
-            )
-            self.record.escalated += 1
-            await self.store.upsert_finding(finding)
-            return
-
-        # --- report ---
-        # Only the files that actually changed are committed. Passing the whole manifest
-        # set through unmodified would produce a pull request with an empty diff.
-        patched = _apply_upstream_bump(snapshot, finding, proposed)
-        if not patched:
-            finding.status = FindingStatus.ESCALATED
-            finding.escalation_reason = (
-                "Patch produced no file change that could be committed"
-            )
-            self.record.escalated += 1
-            await self.store.upsert_finding(finding)
-            return
-
-        if route == APPROVE and latest.diff:
-            finding.status = FindingStatus.VERIFIED
-
-        finding = await self.reporter.report(
-            finding, advisory, patched, snapshot.repo.default_branch
-        )
         if finding.status is FindingStatus.PR_OPENED:
             self.record.prs_opened += 1
-
-        await self.store.upsert_finding(finding)
+        elif finding.status is FindingStatus.DISMISSED:
+            self.record.dismissed += 1
+        elif finding.status in (FindingStatus.ESCALATED, FindingStatus.AWAITING_APPROVAL):
+            self.record.escalated += 1
+        elif finding.status is FindingStatus.FAILED:
+            self.record.failed += 1
 
     async def _log_decision(self, finding: Finding, agent: str, action: str) -> None:
         await self.store.record_decision(
@@ -373,32 +365,6 @@ class NightshiftRun:
                 action=action,
             )
         )
-
-
-def _apply_upstream_bump(
-    snapshot: RepoSnapshot, finding: Finding, proposed_version: str | None
-) -> dict[str, str]:
-    """Produce the files to commit, containing the actual change.
-
-    Returns only manifests whose content genuinely differs. An empty result means the
-    patch could not be materialized into a committable file - which routes to a human
-    rather than opening a pull request with an empty diff.
-
-    Backports are not handled here: they modify source files rather than manifests, and
-    every backport escalates for human approval before reaching this point.
-    """
-    if not proposed_version:
-        return {}
-
-    from nightshift.agents.patcher import bump_manifest
-
-    patched: dict[str, str] = {}
-    for path, content in snapshot.manifests.items():
-        updated, changed = bump_manifest(content, finding.dependency.name, proposed_version)
-        if changed:
-            patched[path] = updated
-
-    return patched
 
 
 def _detect_tests(sources: dict[str, str]) -> bool:
