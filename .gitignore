@@ -1,0 +1,34 @@
+# Secrets — never commit. If one leaks, deleting the file does NOT remove it from git history:
+# rotate the credential.
+.env
+.env.*
+!.env.example
+*-service-account*.json
+service-account*.json
+credentials.json
+client_secret*.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local run artifacts
+.nightshift/
+runs/
+*.log
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
