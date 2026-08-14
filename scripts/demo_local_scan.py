@@ -21,9 +21,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from nightshift.analysis.reachability import analyze_repository  # noqa: E402
-from nightshift.sources.manifests import scan_files  # noqa: E402
-from nightshift.sources.osv import OSVClient  # noqa: E402
+from nightshift.analysis.reachability import analyze_repository
+from nightshift.sources.manifests import scan_files
+from nightshift.sources.osv import OSVClient
 
 MANIFEST = """\
 requests==2.19.1

@@ -1,0 +1,87 @@
+# The night shift.
+#
+# Cloud Scheduler hitting POST /run is the primary trigger when Nightshift is deployed to
+# Cloud Run. This workflow is the equivalent that needs no billing account: GitHub's cron
+# runs the same pipeline, writing state to Firestore. Both paths execute identical code.
+#
+# Required repository secrets:
+#   GCP_SERVICE_ACCOUNT_KEY   JSON key for a service account with Firestore access
+#   GH_PAT                    fine-grained PAT, Contents + Pull requests write, on the
+#                             repositories in the allowlist only
+#
+# Required repository variables:
+#   NIGHTSHIFT_REPO_ALLOWLIST comma-separated owner/name targets
+#   NIGHTSHIFT_DRY_RUN        "true" until you have watched a full run end to end
+#   GOOGLE_CLOUD_PROJECT      Firebase/GCP project id
+
+name: nightly
+
+on:
+  schedule:
+    # 03:00 UTC. The whole premise is that this runs while nobody is watching.
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      live:
+        description: "Open real pull requests (otherwise dry run)"
+        type: boolean
+        default: false
+
+# Least privilege: this workflow reads the repo and needs nothing else from GitHub. Writes
+# to target repositories go through GH_PAT, which is scoped to those repositories only.
+permissions:
+  contents: read
+
+concurrency:
+  # A run still going when the next fires would double the work and race on the claim
+  # ledger. Queue rather than cancel: a half-finished run should be allowed to finish.
+  group: nightshift-run
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: pip install -e .
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+
+      - name: Run the fleet
+        env:
+          GOOGLE_CLOUD_PROJECT: ${{ vars.GOOGLE_CLOUD_PROJECT }}
+          GOOGLE_CLOUD_LOCATION: us-central1
+          GOOGLE_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          NIGHTSHIFT_REPO_ALLOWLIST: ${{ vars.NIGHTSHIFT_REPO_ALLOWLIST }}
+          # Firestore is the Google Cloud service. Free on Firebase's Spark plan, so this
+          # path needs no billing account.
+          NIGHTSHIFT_STORE: firestore
+          # Scheduled runs honour the repository variable. Manual runs are armed only by
+          # explicitly ticking the box, so "live" is always a deliberate act.
+          NIGHTSHIFT_DRY_RUN: >-
+            ${{ github.event_name == 'workflow_dispatch'
+                && (inputs.live && 'false' || 'true')
+                || vars.NIGHTSHIFT_DRY_RUN }}
+        run: nightshift run
+
+      - name: Upload the run record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightshift-run
+          path: .nightshift/
+          if-no-files-found: ignore
+          retention-days: 14
