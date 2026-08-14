@@ -113,12 +113,26 @@ path with a code-execution payoff.
 Three layers, cheapest first:
 
 1. **Deterministic pattern screening** - no network, no cost, nothing to talk around.
-2. **Model Armor** - managed prompt-injection screening. Fails **closed**: if the service
-   is unreachable, content is treated as unscreened and routed to a human.
+2. **Model Armor** - Google's managed prompt-injection and jailbreak screening. Fails
+   **closed**: if the service errors or is misconfigured, content is treated as unscreened
+   and routed to a human. A control that degrades to "looks fine" is worse than none,
+   because it is trusted.
 3. **Structural policy** - even a fully compromised model cannot write to `.github/`, a
    CI config, or a credential file, because that check isn't made by a model.
 
 Layer 3 is the one that actually holds.
+
+### Scoped identities
+
+Three service accounts, sized to their jobs (`scripts/setup_iam.sh`):
+
+| Identity | Holds |
+|---|---|
+| `nightshift-runtime` | Vertex AI, Firestore, Model Armor. Nothing else. |
+| `nightshift-verifier` | **No roles at all.** It runs model-written patches, so if one escapes the sandbox it inherits an identity that cannot read, write or call anything. |
+| `nightshift-scheduler` | `run.invoker` on one service. |
+
+Secret access is granted per-secret rather than project-wide.
 
 ---
 

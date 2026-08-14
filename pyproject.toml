@@ -15,6 +15,9 @@ dependencies = [
     "google-cloud-firestore>=2.16.0",
     "google-cloud-pubsub>=2.21.0",
     "google-cloud-secret-manager>=2.20.0",
+    # Model Armor screens attacker-authored advisory text before it reaches a model that
+    # can write code. See src/nightshift/security/model_armor.py.
+    "google-cloud-modelarmor>=0.2.0",
     # Advisory sources + GitHub
     "httpx>=0.27.0",
     "packaging>=24.0",

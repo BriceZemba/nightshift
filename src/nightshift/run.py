@@ -44,6 +44,7 @@ from nightshift.models import (
     RunRecord,
 )
 from nightshift.policy import PolicyViolation, assert_repo_allowed
+from nightshift.security import build_screener
 from nightshift.sources.manifests import scan_files
 
 log = structlog.get_logger(__name__)
@@ -83,7 +84,11 @@ class NightshiftRun:
         self.store = store
         self.llm = llm or LLMClient(settings=self.settings)
 
-        self.guardian = Guardian()
+        # Model Armor screens attacker-authored advisory text before it reaches a model
+        # that can write code. When it is not configured the screener is None, and Guardian
+        # falls back to deterministic pattern screening while recording that Model Armor
+        # was not consulted.
+        self.guardian = Guardian(model_armor=build_screener(self.settings))
         self.triager = Triager(self.llm)
         self.patcher = Patcher(self.llm)
         self.verifier = verifier or Verifier()

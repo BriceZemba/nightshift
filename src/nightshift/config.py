@@ -53,6 +53,15 @@ class Settings(BaseSettings):
     # --- Advisory sources ---------------------------------------------------
     nvd_api_key: str = Field(default="", alias="NVD_API_KEY")
 
+    # --- Model Armor --------------------------------------------------------
+    #: Template id, or a fully-qualified template resource name. Leaving this unset keeps
+    #: Guardian on deterministic screening alone and records that Model Armor was not
+    #: consulted, rather than pretending content was cleared.
+    model_armor_template: str = Field(default="", alias="MODEL_ARMOR_TEMPLATE")
+    #: Model Armor is regional and rejects the global endpoint. Falls back to
+    #: GOOGLE_CLOUD_LOCATION when unset.
+    model_armor_location: str = Field(default="", alias="MODEL_ARMOR_LOCATION")
+
     # --- Persistence --------------------------------------------------------
     #: "local" is a file-backed store needing no Google Cloud project, so the full
     #: pipeline runs offline. "firestore" is the deployed backend.
