@@ -29,4 +29,7 @@ USER nightshift
 ENV PORT=8080 \
     NIGHTSHIFT_DRY_RUN=true
 
-CMD ["python", "-m", "nightshift.cli", "run"]
+# A Cloud Run service must serve HTTP on $PORT or the deploy fails its health check, so the
+# container runs the web surface rather than the batch command. The nightly run is invoked
+# through POST /run by Cloud Scheduler.
+CMD ["python", "-m", "nightshift.server"]
