@@ -133,7 +133,14 @@ class _Reporter:
         return finding
 
 
-def _build(reachability, *, verifier_passes: bool = True, on_complete=None, settings=None):
+def _build(
+    reachability,
+    *,
+    verifier_passes: bool = True,
+    on_complete=None,
+    settings=None,
+    memory=None,
+):
     reporter = _Reporter()
     workflow = build_finding_workflow(
         guardian=Guardian(),
@@ -143,6 +150,7 @@ def _build(reachability, *, verifier_passes: bool = True, on_complete=None, sett
         reporter=reporter,
         settings=settings or _settings(),
         context_lookup={"find1": _context()}.__getitem__,
+        memory=memory,
         on_complete=on_complete,
     )
     return workflow, reporter
@@ -248,6 +256,54 @@ class TestExecution:
 
         assert reporter.reported == []
         assert "limit" in (completed[-1].escalation_reason or "")
+
+
+class TestMemoryChangesBehaviour:
+    """Memory is only worth having if it alters what the fleet does."""
+
+    async def test_a_previously_declined_change_is_not_proposed_again(self) -> None:
+        from nightshift.memory import PatchMemory
+        from nightshift.models import Reachability
+
+        class _Remembers:
+            """Stands in for memory that already holds a refusal for this change."""
+
+            async def remember(self, finding, proposed_version=None) -> None:
+                return None
+
+            async def previously_declined(self, repo, package, proposed_version):
+                return "This same change was already escalated and has not been approved"
+
+        completed: list[Finding] = []
+
+        async def on_complete(finding: Finding) -> None:
+            completed.append(finding)
+
+        workflow, reporter = _build(
+            Reachability.REACHABLE, on_complete=on_complete, memory=_Remembers()
+        )
+        await _drive(workflow)
+
+        assert reporter.reported == [], "a declined change was re-proposed"
+        assert completed[-1].status is FindingStatus.ESCALATED
+        assert "already escalated" in (completed[-1].escalation_reason or "")
+        assert isinstance(PatchMemory, type)
+
+    async def test_without_a_prior_refusal_the_patch_proceeds(self) -> None:
+        """The suppression must be specific, or memory silently blocks real fixes."""
+        from nightshift.models import Reachability
+
+        class _RemembersNothing:
+            async def remember(self, finding, proposed_version=None) -> None:
+                return None
+
+            async def previously_declined(self, repo, package, proposed_version):
+                return None
+
+        workflow, reporter = _build(Reachability.REACHABLE, memory=_RemembersNothing())
+        await _drive(workflow)
+
+        assert reporter.reported, "memory blocked a change that was never declined"
 
 
 class TestRouterEvents:

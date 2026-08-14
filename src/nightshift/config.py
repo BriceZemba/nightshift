@@ -62,6 +62,14 @@ class Settings(BaseSettings):
     #: GOOGLE_CLOUD_LOCATION when unset.
     model_armor_location: str = Field(default="", alias="MODEL_ARMOR_LOCATION")
 
+    # --- Memory -------------------------------------------------------------
+    #: GEAP Memory Bank agent engine id. Unset falls back to ADK's in-memory service, so
+    #: the recall path always runs and a missing configuration cannot silently change
+    #: behaviour.
+    memory_bank_agent_engine_id: str = Field(
+        default="", alias="MEMORY_BANK_AGENT_ENGINE_ID"
+    )
+
     # --- Persistence --------------------------------------------------------
     #: "local" is a file-backed store needing no Google Cloud project, so the full
     #: pipeline runs offline. "firestore" is the deployed backend.

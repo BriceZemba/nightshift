@@ -85,6 +85,9 @@ class FindingContext(BaseModel):
     sibling_packages: dict[str, set[str]] = Field(default_factory=dict)
     guardian_flagged: bool = False
     proposed_version: str | None = None
+    #: Set when memory shows this exact change was already refused. Re-proposing it nightly
+    #: is how a useful assistant turns into noise a maintainer filters out.
+    previously_declined: str | None = None
 
 
 def payload_text(node_input) -> str:
@@ -117,6 +120,7 @@ def build_finding_workflow(
     reporter,
     settings: Settings,
     context_lookup,
+    memory=None,
     on_decision=None,
     on_complete=None,
     reserve_pr_slot=None,
@@ -150,6 +154,8 @@ def build_finding_workflow(
 
     async def _complete(ctx: FindingContext) -> FindingContext:
         """Hand the finished finding back to the caller. Every terminal node ends here."""
+        if memory is not None:
+            await memory.remember(ctx.finding, ctx.proposed_version)
         if on_complete is not None:
             await on_complete(ctx.finding)
         return ctx
@@ -196,11 +202,25 @@ def build_finding_workflow(
         await _record(
             ctx, "triager", f"{verdict.reachability} ({len(verdict.call_path)} call sites)"
         )
+
+        # Ask memory whether this exact change was already refused. Re-proposing a declined
+        # bump every night is how the pull requests start getting ignored wholesale.
+        if memory is not None:
+            ctx.previously_declined = await memory.previously_declined(
+                ctx.finding.repo, ctx.finding.dependency.name, ctx.proposed_version
+            )
+            if ctx.previously_declined:
+                ctx.finding.escalation_reason = ctx.previously_declined
+                await _record(ctx, "memory", f"recalled: {ctx.previously_declined}")
+
         return ctx
 
     def triage_router(node_input: FindingContext) -> Event:
         ctx = node_input
-        route = ESCALATE if ctx.guardian_flagged else routing.triage_route(ctx.finding)
+        if ctx.guardian_flagged or ctx.previously_declined:
+            route = ESCALATE
+        else:
+            route = routing.triage_route(ctx.finding)
         log.info("route.triage", finding_id=ctx.finding.id, route=route)
         return Event(author="triage_router", route=route, output=ctx)
 

@@ -33,6 +33,7 @@ from nightshift.agents.triager import Triager
 from nightshift.agents.verifier import Verifier
 from nightshift.config import Settings, get_settings
 from nightshift.llm import LLMClient
+from nightshift.memory import build_memory
 from nightshift.models import (
     Advisory,
     Decision,
@@ -77,6 +78,7 @@ class NightshiftRun:
         llm: LLMClient | None = None,
         settings: Settings | None = None,
         verifier: Verifier | None = None,
+        memory: object | None = None,
     ) -> None:
         self.settings = settings or get_settings()
         self.github = github
@@ -89,6 +91,11 @@ class NightshiftRun:
         # falls back to deterministic pattern screening while recording that Model Armor
         # was not consulted.
         self.guardian = Guardian(model_armor=build_screener(self.settings))
+
+        # Per-repo memory of past decisions, so a bump the maintainer already declined is
+        # not re-proposed every night. Falls back to ADK's in-memory service when Memory
+        # Bank is not configured, so the recall path always runs.
+        self.memory = memory or build_memory(self.settings)
         self.triager = Triager(self.llm)
         self.patcher = Patcher(self.llm)
         self.verifier = verifier or Verifier()
@@ -257,6 +264,7 @@ class NightshiftRun:
             reporter=self.reporter,
             settings=self.settings,
             context_lookup=contexts.__getitem__,
+            memory=self.memory,
             on_decision=self._log_decision,
             on_complete=on_complete,
             reserve_pr_slot=self._reserve_pr_slot,
