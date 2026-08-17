@@ -39,6 +39,17 @@ class Triager:
 
     def __init__(self, llm: LLMClient) -> None:
         self._llm = llm
+        #: Rationales, keyed by package and call path.
+        #:
+        #: One package usually carries many advisories -- `requests` alone produced ten in
+        #: the first live run -- and the reachability explanation is identical across all
+        #: of them, because it describes how *this repository* uses the package rather
+        #: than what any one advisory says. Generating it once per package instead of once
+        #: per advisory cut a real run from fourteen model calls to two.
+        #:
+        #: What differs per advisory (id, severity, summary, the fix) is structured data
+        #: already rendered into the pull request body, so nothing is lost.
+        self._rationales: dict[str, str] = {}
 
     def triage(
         self,
@@ -82,8 +93,15 @@ class Triager:
         # Only spend tokens explaining findings that survived. Dismissals carry the static
         # rationale, which is already specific enough to audit.
         if result.reachability is Reachability.REACHABLE and result.call_paths:
-            verdict.rationale = self._explain(advisory, dependency, verdict)
-            verdict.model_used = self._llm.settings.model_reasoning
+            key = self._rationale_key(dependency.name, verdict)
+            cached = self._rationales.get(key)
+            if cached is None:
+                cached = self._explain(advisory, dependency, verdict)
+                self._rationales[key] = cached
+                verdict.model_used = self._llm.settings.model_reasoning
+            else:
+                log.debug("triage.rationale_reused", package=dependency.name)
+            verdict.rationale = cached
 
         log.info(
             "triage.verdict",
@@ -95,6 +113,17 @@ class Triager:
         )
 
         return verdict
+
+    @staticmethod
+    def _rationale_key(package: str, verdict: TriageVerdict) -> str:
+        """Identify an explanation by what it actually describes.
+
+        Two advisories against the same package, reached through the same call sites, want
+        the same explanation. Keying on the call path rather than the package alone means a
+        repository that uses a package in two distinct places still gets both explained.
+        """
+        sites = ";".join(f"{s.file_path}:{s.line}:{s.symbol}" for s in verdict.call_path)
+        return f"{package}|{sites}"
 
     def _explain(
         self, advisory: Advisory, dependency: Dependency, verdict: TriageVerdict

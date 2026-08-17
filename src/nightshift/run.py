@@ -270,7 +270,7 @@ class NightshiftRun:
             reserve_pr_slot=self._reserve_pr_slot,
         )
 
-        semaphore = asyncio.Semaphore(4)
+        semaphore = asyncio.Semaphore(self.settings.concurrency)
 
         async def handle(finding: Finding) -> None:
             async with semaphore:

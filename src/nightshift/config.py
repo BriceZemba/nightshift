@@ -76,6 +76,16 @@ class Settings(BaseSettings):
     store_backend: str = Field(default="local", alias="NIGHTSHIFT_STORE")
     local_store_path: str = Field(default=".nightshift", alias="NIGHTSHIFT_STORE_PATH")
 
+    # --- Rate limiting ------------------------------------------------------
+    #: Requests per minute to the model. The Gemini free tier allows 20, so the default
+    #: leaves headroom: staying under the ceiling is cheaper than being throttled at it.
+    #: Raise it on a paid tier.
+    llm_requests_per_minute: int = Field(default=12, alias="NIGHTSHIFT_LLM_RPM")
+
+    #: Findings processed at once. Every concurrent finding competes for the same model
+    #: quota, so more parallelism buys nothing once the limiter is the bottleneck.
+    concurrency: int = Field(default=2, alias="NIGHTSHIFT_CONCURRENCY")
+
     # --- Safety rails -------------------------------------------------------
     dry_run: bool = Field(default=True, alias="NIGHTSHIFT_DRY_RUN")
     max_prs_per_run: int = Field(default=5, alias="NIGHTSHIFT_MAX_PRS_PER_RUN")

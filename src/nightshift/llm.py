@@ -19,6 +19,7 @@ them; swallowing them here would disable it silently.
 from __future__ import annotations
 
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -34,6 +35,38 @@ log = structlog.get_logger(__name__)
 #: usual "retry in Ns" window the API reports without stalling a run for minutes.
 RATE_LIMIT_BACKOFF_SECONDS = 8
 RATE_LIMIT_MAX_RETRIES = 4
+
+
+class RateLimiter:
+    """Keeps request rate under a per-minute ceiling.
+
+    Backoff alone was not enough: it reacts to a 429 that has already been spent, and each
+    retry burns more of the same quota. Waiting *before* the call means the limit is
+    approached rather than exceeded, so the retry path becomes the exception instead of
+    the norm.
+
+    A sliding window rather than a fixed one, because the quota is enforced that way and a
+    fixed window lets a burst at the boundary spend two windows' worth of budget at once.
+    """
+
+    def __init__(self, requests_per_minute: int) -> None:
+        self.limit = max(1, requests_per_minute)
+        self._calls: deque[float] = deque()
+
+    def acquire(self) -> None:
+        """Block until another request would be within the limit."""
+        while True:
+            now = time.monotonic()
+            while self._calls and now - self._calls[0] >= 60:
+                self._calls.popleft()
+
+            if len(self._calls) < self.limit:
+                self._calls.append(now)
+                return
+
+            sleep_for = 60 - (now - self._calls[0]) + 0.1
+            log.info("llm.throttled", sleeping=round(sleep_for, 1), limit=self.limit)
+            time.sleep(sleep_for)
 
 
 def _is_rate_limit(exc: Exception) -> bool:
@@ -99,6 +132,7 @@ class LLMClient:
         self.settings = settings or get_settings()
         self.usage = Usage()
         self._client = client
+        self._limiter = RateLimiter(self.settings.llm_requests_per_minute)
 
     @property
     def client(self) -> Any:
@@ -182,6 +216,7 @@ class LLMClient:
 
         for attempt in range(RATE_LIMIT_MAX_RETRIES):
             try:
+                self._limiter.acquire()
                 return self.client.interactions.create(model=model, input=prompt, **kwargs)
             except Exception as exc:
                 if not _is_rate_limit(exc):
