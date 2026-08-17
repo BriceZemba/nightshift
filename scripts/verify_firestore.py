@@ -25,6 +25,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from google.api_core.exceptions import NotFound, PermissionDenied
+from google.auth.exceptions import DefaultCredentialsError
+
 from nightshift.models import (
     Advisory,
     Decision,
@@ -61,7 +64,18 @@ async def main() -> int:
 
     from nightshift.store.firestore import Store
 
-    store = Store()
+    # Credentials are resolved when the client is constructed, not on first use, so this
+    # is where a missing key surfaces.
+    try:
+        store = Store()
+    except DefaultCredentialsError:
+        print(f"{RED}No credentials found.{RESET}\n")
+        print("  Point GOOGLE_APPLICATION_CREDENTIALS at your service account key:")
+        print(f"  {DIM}$env:GOOGLE_APPLICATION_CREDENTIALS=\"$HOME\\.secrets\\key.json\"{RESET}")
+        print("\n  Get one from the Firebase console:")
+        print(f"  {DIM}Project settings -> Service accounts -> Generate new private key{RESET}")
+        return 2
+
     run_id = f"verify-{uuid.uuid4().hex[:8]}"
     repo = "verify/example"
 
@@ -80,9 +94,26 @@ async def main() -> int:
         status=FindingStatus.TRIAGED,
     )
 
-    # --- round trips --------------------------------------------------------
+    # --- reachability -------------------------------------------------------
+    # A first write is the cheapest way to tell "no database" apart from "no permission",
+    # and the two have completely different fixes. The raw gRPC traceback buries both.
     record = RunRecord(id=run_id, advisories_ingested=60, findings_reachable=16)
-    await store.start_run(record)
+    try:
+        await store.start_run(record)
+    except NotFound:
+        print(f"{RED}No Firestore database exists in project {project}.{RESET}\n")
+        print("  Create one in the Firebase console, which needs no billing account:")
+        print(f"  {DIM}https://console.firebase.google.com{RESET}")
+        print("    Build -> Firestore Database -> Create database")
+        print(f"    {BOLD}Native mode{RESET}, not Datastore mode. The client only speaks Native.")
+        return 2
+    except PermissionDenied:
+        print(f"{RED}Authenticated, but not allowed to write to Firestore.{RESET}\n")
+        print("  The service account needs roles/datastore.user on the project.")
+        print(f"  {DIM}Firebase console -> Project settings -> Service accounts{RESET}")
+        return 2
+
+    # --- round trips --------------------------------------------------------
     await store.finish_run(record)
     loaded_run = await store.get_run(run_id)
     check(
