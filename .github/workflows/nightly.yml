@@ -54,12 +54,35 @@ jobs:
       - name: Install
         run: pip install -e .
 
+      # An unconfigured repository must not produce a red run every night. Red CI that is
+      # expected is red CI that gets ignored, and a real failure then goes unnoticed.
+      - name: Check configuration
+        id: config
+        env:
+          GCP_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+          ALLOWLIST: ${{ vars.NIGHTSHIFT_REPO_ALLOWLIST }}
+        run: |
+          if [ -n "$GCP_KEY" ] && [ -n "$ALLOWLIST" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Not configured for a full run. Set the GCP_SERVICE_ACCOUNT_KEY secret and the NIGHTSHIFT_REPO_ALLOWLIST variable. Running the credential-free scan instead."
+          fi
+
+      # Always proves something. Real advisories from OSV, real reachability analysis, no
+      # credentials, no model calls. This is also the number quoted in the README.
+      - name: Smoke test (no credentials)
+        if: steps.config.outputs.configured != 'true'
+        run: python scripts/demo_local_scan.py
+
       - name: Authenticate to Google Cloud
+        if: steps.config.outputs.configured == 'true'
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
 
       - name: Run the fleet
+        if: steps.config.outputs.configured == 'true'
         env:
           GOOGLE_CLOUD_PROJECT: ${{ vars.GOOGLE_CLOUD_PROJECT }}
           GOOGLE_CLOUD_LOCATION: us-central1
@@ -78,7 +101,7 @@ jobs:
         run: nightshift run
 
       - name: Upload the run record
-        if: always()
+        if: always() && steps.config.outputs.configured == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: nightshift-run

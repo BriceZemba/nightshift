@@ -1,0 +1,47 @@
+# Tests and lint on every push.
+#
+# The suite needs no network, no credentials and no Google Cloud project, which is the
+# point: a clean checkout on a fresh runner proves the tests pass because the code works,
+# not because a local machine happens to be configured.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: pip install -e ".[dev]"
+
+      - name: Lint
+        run: ruff check src tests scripts
+
+      - name: Test
+        run: pytest -q
+
+      # Proves the container Cloud Run would run actually builds. Catches a broken
+      # Dockerfile here rather than five minutes into a deploy.
+      - name: Build the container
+        run: docker build -t nightshift:ci .
