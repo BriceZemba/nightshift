@@ -7,6 +7,15 @@
 service-account*.json
 credentials.json
 client_secret*.json
+# Firebase downloads admin keys as <project>-firebase-adminsdk-<hash>.json, which none of
+# the patterns above match.
+*firebase-adminsdk*.json
+*-adminsdk-*.json
+# Catch-all for anything that reads like a key. Better a false positive than a leaked
+# credential in a public repository.
+*serviceaccount*.json
+gcp-key*.json
+key.json
 
 # Python
 __pycache__/
