@@ -76,6 +76,10 @@ class VersionRange(BaseModel):
     introduced: str | None = None
     fixed: str | None = None
     last_affected: str | None = None
+    #: OSV range type: ECOSYSTEM, SEMVER or GIT. It matters because a GIT range's "fixed"
+    #: value is a commit SHA, not a release, and pinning a manifest to a 40-character hash
+    #: produces an install that cannot resolve.
+    type: str = "ECOSYSTEM"
 
 
 class AffectedPackage(BaseModel):
@@ -85,9 +89,13 @@ class AffectedPackage(BaseModel):
     versions: list[str] = Field(default_factory=list)
 
     def first_fixed_version(self) -> str | None:
-        """The earliest version that resolves the advisory, if upstream published one."""
+        """The earliest *released* version that resolves the advisory, if one exists.
+
+        GIT ranges are skipped. Their ``fixed`` value is a commit SHA, which is a real
+        answer to "where was this fixed" and a useless answer to "what do I pin to".
+        """
         for r in self.ranges:
-            if r.fixed:
+            if r.fixed and r.type.upper() != "GIT":
                 return r.fixed
         return None
 

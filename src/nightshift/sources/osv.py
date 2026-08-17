@@ -64,21 +64,24 @@ def _parse_ranges(raw_ranges: list[dict[str, Any]]) -> list[VersionRange]:
     """
     parsed: list[VersionRange] = []
     for raw in raw_ranges:
+        # GIT ranges carry commit SHAs rather than releases; the type has to survive so
+        # callers can tell a version from a hash.
+        range_type = raw.get("type", "ECOSYSTEM")
         current: VersionRange | None = None
         for event in raw.get("events", []):
             if "introduced" in event:
                 if current is not None:
                     parsed.append(current)
-                current = VersionRange(introduced=event["introduced"])
+                current = VersionRange(introduced=event["introduced"], type=range_type)
             elif "fixed" in event:
                 if current is None:
-                    current = VersionRange()
+                    current = VersionRange(type=range_type)
                 current.fixed = event["fixed"]
                 parsed.append(current)
                 current = None
             elif "last_affected" in event:
                 if current is None:
-                    current = VersionRange()
+                    current = VersionRange(type=range_type)
                 current.last_affected = event["last_affected"]
                 parsed.append(current)
                 current = None

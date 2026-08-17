@@ -233,7 +233,12 @@ def build_finding_workflow(
     async def verify(node_input: FindingContext) -> FindingContext:
         ctx = node_input
         attempt = ctx.finding.attempts[-1]
-        result = verifier.verify(ctx.sources, attempt.diff, ctx.test_command)
+        # Manifests as well as sources. An upstream bump patches requirements.txt, so a
+        # work tree containing only Python files gives `git apply` nothing to patch and
+        # every verification fails for a reason that has nothing to do with the patch.
+        result = verifier.verify(
+            {**ctx.sources, **ctx.manifests}, attempt.diff, ctx.test_command
+        )
         attempt.tests_passed = result.passed
         attempt.test_output = result.output
         if result.skipped_reason:

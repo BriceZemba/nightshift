@@ -18,6 +18,7 @@ them; swallowing them here would disable it silently.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -29,6 +30,27 @@ log = structlog.get_logger(__name__)
 
 #: Published rates per 1M tokens, used for the cost figure quoted in the run summary.
 #: Gemma is free on the Gemini API, which is the whole point of routing to it first.
+#: The free tier allows 20 requests per minute. Exponential backoff from 8s covers the
+#: usual "retry in Ns" window the API reports without stalling a run for minutes.
+RATE_LIMIT_BACKOFF_SECONDS = 8
+RATE_LIMIT_MAX_RETRIES = 4
+
+
+def _is_rate_limit(exc: Exception) -> bool:
+    """Whether an exception is a 429.
+
+    Matched on the message rather than the type: the GenAI SDK raises rate limits from
+    several exception classes depending on the transport, and pinning to one of them makes
+    the retry silently stop working when the SDK changes.
+    """
+    text = f"{type(exc).__name__} {exc}".lower()
+    return (
+        "429" in text
+        or ("rate" in text and "limit" in text)
+        or "resource_exhausted" in text
+    )
+
+
 PRICING_PER_MTOK: dict[str, tuple[float, float]] = {
     "gemini-3.6-flash": (1.50, 7.50),
     "gemini-3.5-flash": (1.50, 7.50),
@@ -123,7 +145,7 @@ class LLMClient:
         return str(response)
 
     def _call(self, model: str, prompt: str, **kwargs: Any) -> Completion:
-        response = self.client.interactions.create(model=model, input=prompt, **kwargs)
+        response = self._call_with_retry(model, prompt, **kwargs)
 
         tokens_in, tokens_out = self._extract_usage(response)
         cost = self.usage.add(model, tokens_in, tokens_out)
@@ -143,6 +165,41 @@ class LLMClient:
             tokens_out=tokens_out,
             cost_usd=cost,
         )
+
+    def _call_with_retry(self, model: str, prompt: str, **kwargs: Any) -> Any:
+        """Call the model, backing off on rate limits.
+
+        The free tier allows 20 requests per minute, and a nightly run over a few hundred
+        dependencies will hit that. A 429 is transient by definition: it says "later", not
+        "no". Letting one kill an entire run would mean the system fails on the single most
+        predictable error it faces.
+
+        Only rate limits are retried. Everything else propagates, because ADK's own retry
+        should see it and a broad catch here would hide real faults.
+        """
+        delay = RATE_LIMIT_BACKOFF_SECONDS
+        last_error: Exception | None = None
+
+        for attempt in range(RATE_LIMIT_MAX_RETRIES):
+            try:
+                return self.client.interactions.create(model=model, input=prompt, **kwargs)
+            except Exception as exc:
+                if not _is_rate_limit(exc):
+                    raise
+                last_error = exc
+                if attempt < RATE_LIMIT_MAX_RETRIES - 1:
+                    log.warning(
+                        "llm.rate_limited",
+                        model=model,
+                        attempt=attempt + 1,
+                        sleeping=delay,
+                    )
+                    time.sleep(delay)
+                    delay *= 2
+
+        raise RuntimeError(
+            f"{model} still rate limited after {RATE_LIMIT_MAX_RETRIES} attempts"
+        ) from last_error
 
     def classify(self, prompt: str) -> Completion:
         """Cheap, high-frequency work - routed to Gemma at zero token cost.
