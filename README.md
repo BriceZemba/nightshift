@@ -234,7 +234,8 @@ overclaimed one:
 `gemini-3.6-flash` · Google ADK 2.x · Gemma 4 · Veo · Lyria · Cloud Run · Firestore ·
 Pub/Sub · Cloud Scheduler · Model Armor · GEAP Agent Runtime · OTel → Cloud Trace
 
-Built for the [All Things Agentic Hackathon](https://allthingsagentichackathon.devpost.com/) - Fortified Enterprise Fleet track.
+Built for the [All Things Agentic Hackathon](https://allthingsagentichackathon.devpost.com/),
+**The Taskmaster** track.
 
 ## License
 
