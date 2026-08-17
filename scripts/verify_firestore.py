@@ -179,9 +179,12 @@ async def main() -> int:
         ("findings", finding.id),
     ):
         await store.client.collection(collection).document(doc_id).delete()
-    for decision in await store.client.collection("decisions").where(
-        "run_id", "==", run_id
-    ).get():
+    from google.cloud.firestore_v1.base_query import FieldFilter
+
+    stale = await store.client.collection("decisions").where(
+        filter=FieldFilter("run_id", "==", run_id)
+    ).get()
+    for decision in stale:
         await decision.reference.delete()
 
     print(f"\n  {DIM}verification documents removed{RESET}")

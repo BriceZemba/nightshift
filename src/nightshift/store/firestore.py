@@ -20,6 +20,7 @@ from datetime import UTC, datetime
 
 import structlog
 from google.cloud import firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 from nightshift.models import Advisory, Decision, Finding, RunRecord
 
@@ -128,7 +129,11 @@ class Store:
         return Finding(**snapshot.to_dict()) if snapshot.exists else None
 
     async def findings_for_run(self, run_id: str) -> list[Finding]:
-        query = self._client.collection(FINDINGS).where("run_id", "==", run_id)
+        # FieldFilter rather than positional arguments: the positional form is deprecated
+        # and warns on every call.
+        query = self._client.collection(FINDINGS).where(
+            filter=FieldFilter("run_id", "==", run_id)
+        )
         return [Finding(**doc.to_dict()) async for doc in query.stream()]
 
     # --- audit log ----------------------------------------------------------
@@ -144,7 +149,9 @@ class Store:
         await self._client.collection(DECISIONS).add(decision.model_dump())
 
     async def decisions_for_finding(self, finding_id: str) -> list[Decision]:
-        query = self._client.collection(DECISIONS).where("finding_id", "==", finding_id)
+        query = self._client.collection(DECISIONS).where(
+            filter=FieldFilter("finding_id", "==", finding_id)
+        )
         decisions = [Decision(**doc.to_dict()) async for doc in query.stream()]
         return sorted(decisions, key=lambda d: d.at or datetime.min.replace(tzinfo=UTC))
 
