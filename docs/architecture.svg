@@ -1,0 +1,191 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1020 1220" width="1020" height="1220" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">
+  <style>
+    .bg      { fill: #0b0d12; }
+    .panel   { fill: #151a24; stroke: #2a3242; stroke-width: 1.5; rx: 8; }
+    .agent   { fill: #161d2b; stroke: #3d4a63; stroke-width: 2; rx: 8; }
+    .zone    { fill: none; stroke-width: 1.5; stroke-dasharray: 6 5; rx: 12; }
+    .t       { fill: #e6e8ee; font-size: 15px; }
+    .tb      { fill: #e6e8ee; font-size: 16px; font-weight: 700; }
+    .dim     { fill: #8b93a7; font-size: 12.5px; }
+    .blue    { fill: #79c0ff; font-size: 12.5px; }
+    .green   { fill: #7ee787; font-size: 12.5px; }
+    .red     { fill: #ff7b72; font-size: 12.5px; }
+    .yellow  { fill: #e3b341; font-size: 12.5px; }
+    .purple  { fill: #d2a8ff; font-size: 12.5px; }
+    .title   { fill: #e6e8ee; font-size: 25px; font-weight: 700; }
+    .sub     { fill: #8b93a7; font-size: 14px; }
+    .flow    { stroke: #4a5773; stroke-width: 2; fill: none; marker-end: url(#a); }
+    .flowr   { stroke: #ff7b72; stroke-width: 2; fill: none; marker-end: url(#ar); }
+    .flowg   { stroke: #7ee787; stroke-width: 2; fill: none; marker-end: url(#ag); }
+    .flowy   { stroke: #e3b341; stroke-width: 2; fill: none; marker-end: url(#ay); }
+    .loop    { stroke: #d2a8ff; stroke-width: 2; fill: none; stroke-dasharray: 5 4; marker-end: url(#ap); }
+    .store   { stroke: #6e7891; stroke-width: 1.5; fill: none; stroke-dasharray: 3 4; }
+    .lbl     { fill: #8b93a7; font-size: 11.5px; }
+  </style>
+
+  <defs>
+    <marker id="a"  markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#4a5773"/></marker>
+    <marker id="ar" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#ff7b72"/></marker>
+    <marker id="ag" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#7ee787"/></marker>
+    <marker id="ay" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#e3b341"/></marker>
+    <marker id="ap" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#d2a8ff"/></marker>
+  </defs>
+
+  <rect class="bg" width="1020" height="1220"/>
+
+  <text class="title" x="40" y="52">Nightshift</text>
+  <text class="sub"   x="40" y="76">Six agents. One advisory at a time. Nobody at the keyboard.</text>
+
+  <!-- ================= TRIGGER ================= -->
+  <rect class="panel" x="330" y="104" width="360" height="46"/>
+  <text class="t"   x="352" y="127">⏰ Trigger</text>
+  <text class="dim" x="352" y="144">Cloud Scheduler 03:00 · or GitHub Actions cron</text>
+  <path class="flow" d="M510,150 L510,186"/>
+
+  <!-- ================= UNTRUSTED ZONE ================= -->
+  <rect class="zone" x="28" y="186" width="964" height="106" stroke="#ff7b72"/>
+  <text class="red" x="44" y="206">UNTRUSTED — text written by strangers</text>
+
+  <rect class="panel" x="60"  y="216" width="200" height="58"/>
+  <text class="t"   x="76" y="240">OSV.dev</text>
+  <text class="dim" x="76" y="259">no auth · primary feed</text>
+
+  <rect class="panel" x="280" y="216" width="200" height="58"/>
+  <text class="t"   x="296" y="240">GitHub Advisories</text>
+  <text class="dim" x="296" y="259">descriptions, ranges</text>
+
+  <rect class="panel" x="500" y="216" width="180" height="58"/>
+  <text class="t"   x="516" y="240">NVD</text>
+  <text class="dim" x="516" y="259">CVSS, CWE</text>
+
+  <rect class="panel" x="700" y="216" width="240" height="58"/>
+  <text class="t"   x="716" y="240">Your repositories</text>
+  <text class="dim" x="716" y="259">manifests · source · tests</text>
+
+  <path class="flowr" d="M510,292 L510,326"/>
+
+  <!-- ================= WATCHER ================= -->
+  <rect class="agent" x="300" y="326" width="420" height="62"/>
+  <text class="tb"  x="322" y="350">1 · WATCHER</text>
+  <text class="dim" x="322" y="371">dedupe → relevance filter → fan out</text>
+  <text class="green" x="600" y="350">Gemma 4</text>
+  <text class="green" x="600" y="371">$0 / token</text>
+  <path class="flowr" d="M510,388 L510,420"/>
+
+  <!-- ================= GUARDIAN ================= -->
+  <rect class="agent" x="240" y="420" width="540" height="96" stroke="#ff7b72"/>
+  <text class="tb"  x="262" y="444">2 · GUARDIAN</text>
+  <text class="red" x="262" y="464">the trust boundary — nothing crosses unscreened</text>
+  <text class="dim" x="262" y="484">① deterministic patterns  ② Model Armor  ③ structural policy</text>
+  <text class="dim" x="262" y="503">fails closed · unreachable means unscreened means human</text>
+
+  <text class="lbl" x="796" y="452">Layer 3 holds even if</text>
+  <text class="lbl" x="796" y="468">the model is fully</text>
+  <text class="lbl" x="796" y="484">compromised: .github/</text>
+  <text class="lbl" x="796" y="500">and credentials are</text>
+  <text class="lbl" x="796" y="516">unwritable, and that</text>
+  <text class="lbl" x="796" y="532">check is not made</text>
+  <text class="lbl" x="796" y="548">by a model.</text>
+
+  <path class="flow" d="M510,516 L510,548"/>
+
+  <!-- ================= TRIAGER ================= -->
+  <rect class="agent" x="300" y="548" width="420" height="80"/>
+  <text class="tb"   x="322" y="572">3 · TRIAGER</text>
+  <text class="dim"  x="322" y="592">Python AST · imports, aliases, symbol usage</text>
+  <text class="dim"  x="322" y="611">static analysis decides — the model only explains</text>
+  <text class="blue" x="600" y="592">Gemini 3.6</text>
+  <text class="blue" x="600" y="611">Flash</text>
+
+  <path class="flow" d="M510,628 L510,664"/>
+
+  <!-- ================= REACHABILITY DECISION ================= -->
+  <path d="M510,664 L640,712 L510,760 L380,712 z" fill="#161d2b" stroke="#3d4a63" stroke-width="2"/>
+  <text class="t"   x="443" y="708">reachable</text>
+  <text class="t"   x="470" y="728">here?</text>
+
+  <path class="flow" d="M380,712 L214,712"/>
+  <text class="lbl" x="252" y="702">no  ·  the common case</text>
+
+  <rect class="panel" x="34" y="686" width="180" height="52"/>
+  <text class="t"   x="50" y="710">DISMISS</text>
+  <text class="dim" x="50" y="728">no model call, no cost</text>
+
+  <text class="green" x="34" y="770">180 advisories → 6</text>
+  <text class="lbl"   x="34" y="789">the product, in one step</text>
+
+  <path class="flow" d="M510,760 L510,796"/>
+  <text class="lbl" x="524" y="782">yes, or unknown</text>
+
+  <!-- ================= PATCHER / VERIFIER LOOP ================= -->
+  <rect class="agent" x="300" y="796" width="420" height="72"/>
+  <text class="tb"   x="322" y="820">4 · PATCHER</text>
+  <text class="dim"  x="322" y="840">version bump (deterministic, no model)</text>
+  <text class="dim"  x="322" y="858">or synthesized backport when no fix exists</text>
+  <text class="blue" x="600" y="840">Gemini 3.6</text>
+
+  <path class="flow" d="M510,868 L510,900"/>
+
+  <rect class="agent" x="300" y="900" width="420" height="66"/>
+  <text class="tb"  x="322" y="924">5 · VERIFIER</text>
+  <text class="dim" x="322" y="944">runs the repo's own test suite</text>
+  <text class="red" x="322" y="960">isolated · no network egress · no IAM roles</text>
+
+  <path class="loop" d="M720,933 C790,933 790,832 722,832"/>
+  <text class="purple" x="738" y="888">critique</text>
+  <text class="purple" x="738" y="905">loop ≤3</text>
+
+  <path class="flow" d="M510,966 L510,1000"/>
+
+  <!-- ================= POLICY GATE ================= -->
+  <rect class="agent" x="270" y="1000" width="480" height="62" stroke="#e3b341"/>
+  <text class="tb"     x="292" y="1024">POLICY GATE</text>
+  <text class="dim"    x="292" y="1044">major bump · no tests · backport · flagged · already declined</text>
+  <text class="yellow" x="640" y="1032">outside the</text>
+  <text class="yellow" x="640" y="1049">model's reach</text>
+
+  <path class="flowy" d="M290,1062 L150,1062 L150,1096"/>
+  <rect class="panel" x="34" y="1096" width="232" height="56" stroke="#e3b341"/>
+  <text class="t"      x="50" y="1120">⏸ HUMAN APPROVAL</text>
+  <text class="dim"    x="50" y="1139">graph suspends · nothing written</text>
+
+  <path class="flowg" d="M600,1062 L600,1096"/>
+  <text class="lbl" x="614" y="1084">auto</text>
+
+  <!-- ================= REPORTER ================= -->
+  <rect class="agent" x="420" y="1096" width="360" height="66" stroke="#7ee787"/>
+  <text class="tb"   x="442" y="1120">6 · REPORTER</text>
+  <text class="dim"  x="442" y="1140">pull request + full evidence trail</text>
+  <text class="green" x="442" y="1157">call path · diff · tests · cost · trace ids</text>
+
+  <!-- ================= STATE (right rail) ================= -->
+  <rect class="zone" x="806" y="600" width="186" height="330" stroke="#d2a8ff"/>
+  <text class="purple" x="820" y="622">STATE · Firestore</text>
+
+  <rect class="panel" x="820" y="636" width="158" height="50"/>
+  <text class="t"   x="834" y="658">runs</text>
+  <text class="dim" x="834" y="676">the night's numbers</text>
+
+  <rect class="panel" x="820" y="696" width="158" height="50"/>
+  <text class="t"   x="834" y="718">findings</text>
+  <text class="dim" x="834" y="736">resumable work</text>
+
+  <rect class="panel" x="820" y="756" width="158" height="50"/>
+  <text class="t"   x="834" y="778">decisions</text>
+  <text class="dim" x="834" y="796">audit, every hop</text>
+
+  <rect class="panel" x="820" y="816" width="158" height="66" stroke="#d2a8ff"/>
+  <text class="t"      x="834" y="838">pr_locks</text>
+  <text class="purple" x="834" y="856">granted exactly once</text>
+  <text class="dim"    x="834" y="873">no duplicate PRs, ever</text>
+
+  <text class="lbl" x="820" y="902">+ Memory Bank:</text>
+  <text class="lbl" x="820" y="918">what you already refused</text>
+
+  <path class="store" d="M720,590 L806,660"/>
+  <path class="store" d="M720,832 L806,790"/>
+  <path class="store" d="M780,1129 L900,1129 L900,940"/>
+
+  <!-- ================= FOOTER ================= -->
+  <text class="dim" x="40" y="1196">Google ADK 2.x Workflow · Gemini 3.6 Flash · Gemma 4 · Model Armor · Firestore · Cloud Run or GitHub Actions</text>
+</svg>

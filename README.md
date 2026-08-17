@@ -71,6 +71,14 @@ Six agents, each with a job the others can't do.
 **Orchestration:** fan-out/gather · critique loop (bounded at 3) · human-in-the-loop gate ·
 A2A-addressable language specialists.
 
+![Nightshift architecture](docs/architecture.svg)
+
+The diagram is worth reading for three things the box-and-arrow summary below hides: the
+**red boundary** marking where attacker-authored text enters and where Guardian stops it,
+the **purple loop** where Patcher and Verifier argue until the tests pass or three attempts
+are spent, and the **`pr_locks` ledger** that grants the right to open a pull request
+exactly once no matter how many times a run is retried.
+
 ```
 Cloud Scheduler (03:00 nightly)
         │
