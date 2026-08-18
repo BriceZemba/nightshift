@@ -206,6 +206,13 @@ class Finding(BaseModel):
     attempts: list[PatchAttempt] = Field(default_factory=list)
     pr_url: str | None = None
     escalation_reason: str | None = None
+    #: Other advisories against the same package that this one bump also resolves.
+    #:
+    #: One package routinely carries many advisories -- requests alone produced five in a
+    #: real run -- and opening a pull request per advisory means five pull requests that
+    #: each bump the same line to a different version and conflict with each other. That is
+    #: the noise this project exists to remove, so it must not produce it.
+    also_fixes: list[str] = Field(default_factory=list)
     cost_usd: float = 0.0
     created_at: datetime | None = None
     updated_at: datetime | None = None

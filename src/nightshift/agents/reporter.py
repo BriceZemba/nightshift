@@ -77,6 +77,18 @@ def render_pull_request_body(
     )
     lines.append("")
 
+    if finding.also_fixes:
+        listed = ", ".join(f"`{a}`" for a in finding.also_fixes[:8])
+        more = (
+            f" and {len(finding.also_fixes) - 8} more"
+            if len(finding.also_fixes) > 8
+            else ""
+        )
+        lines.append(
+            f"**This bump also resolves:** {listed}{more}"
+        )
+        lines.append("")
+
     # --- why this one, out of all of them ---
     lines.append("### Why this advisory applies here")
     lines.append("")
@@ -162,7 +174,8 @@ def render_pull_request_body(
     lines.append("")
     lines.append("---")
     lines.append(
-        "🌙 Opened by [Nightshift](https://github.com/) while nobody was watching. "
+        "🌙 Opened by [Nightshift](https://github.com/BriceZemba/nightshift) while "
+        "nobody was watching. "
         "Every decision above is reproducible from the audit trail."
     )
 

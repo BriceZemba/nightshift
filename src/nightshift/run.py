@@ -31,6 +31,7 @@ from nightshift.agents.patcher import Patcher
 from nightshift.agents.reporter import Reporter
 from nightshift.agents.triager import Triager
 from nightshift.agents.verifier import Verifier
+from nightshift.coalesce import coalesce
 from nightshift.config import Settings, get_settings
 from nightshift.llm import LLMClient
 from nightshift.memory import build_memory
@@ -224,6 +225,11 @@ class NightshiftRun:
                         dependency=dependency,
                     )
                 )
+
+        # One pull request per package, not per advisory. Five advisories against
+        # requests are one bump, and opening five conflicting pull requests would produce
+        # exactly the noise this project exists to remove.
+        findings = coalesce(findings, advisories)
 
         log.info("run.discovered", advisories=len(advisories), findings=len(findings))
         return advisories, findings
