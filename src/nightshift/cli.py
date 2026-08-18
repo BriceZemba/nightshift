@@ -152,6 +152,10 @@ async def _run(args: argparse.Namespace) -> int:
     print(f"  pull requests  : {record.prs_opened}")
     print(f"  escalated      : {record.escalated}")
     print(f"  dismissed      : {record.dismissed}")
+    if record.already_reported:
+        print(f"  already open   : {record.already_reported}  (claimed by an earlier run)")
+    if record.failed:
+        print(f"  [31mfailed[0m         : {record.failed}")
     print(f"  cost           : ${record.cost_usd:.4f}")
 
     return 0

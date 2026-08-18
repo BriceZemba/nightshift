@@ -393,6 +393,19 @@ class NightshiftRun:
             self.record.escalated += 1
         elif finding.status is FindingStatus.FAILED:
             self.record.failed += 1
+        else:
+            # Everything else means the finding produced a patch but no pull request, which
+            # in practice means the idempotency ledger already held a claim for it. Counted
+            # nowhere, it simply disappeared from the summary and a run that opened one
+            # pull request instead of two looked like it had done nothing wrong.
+            log.info(
+                "run.no_pull_request",
+                finding_id=finding.id,
+                advisory=finding.advisory_id,
+                status=str(finding.status),
+                hint="already claimed; scripts/release_claims.py clears it",
+            )
+            self.record.already_reported += 1
 
     async def _log_decision(self, finding: Finding, agent: str, action: str) -> None:
         await self.store.record_decision(
