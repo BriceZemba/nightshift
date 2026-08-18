@@ -66,16 +66,21 @@ def _build(settings: Settings, hits: dict, advisories: list):
             }
         }
     )
+    from nightshift.llm import LLMClient
+
+    # Injected at construction, not assigned afterwards. The constructor builds
+    # Triager(self.llm) and Patcher(self.llm) immediately, so reassigning run.llm later
+    # leaves those agents holding the original client -- which, with no API key, means a
+    # real network call. That passed locally and failed in CI, which is the only place the
+    # absence of a key was honest.
     run = NightshiftRun(
         github=github,
         osv=FakeOSV(hits, advisories),
         store=FakeStore(),
+        llm=LLMClient(client=FakeGenAI(), settings=settings),
         settings=settings,
         verifier=AlwaysPassVerifier(),
     )
-    from nightshift.llm import LLMClient
-
-    run.llm = LLMClient(client=FakeGenAI(), settings=settings)
     return run, github
 
 
