@@ -234,6 +234,11 @@ overclaimed one:
 - **Only pinned versions are checked.** A range like `requests>=2.0` names permitted
   versions, not the installed one, so it is reported as unresolved rather than guessed.
 - Backported patches are **never** merged automatically, regardless of whether tests pass.
+- **The Verifier runs the test suite against the ambient environment, not the repository's
+  pinned versions.** It proves a patch does not break the code; for a manifest-only version
+  bump that is a weaker signal than it looks, because the new version is not actually
+  installed before the tests run. Installing pinned dependencies per attempt is the correct
+  fix and is not yet done.
 
 ---
 
