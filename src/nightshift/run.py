@@ -309,6 +309,25 @@ class NightshiftRun:
                     self.record.failed += 1
                     await self.store.upsert_finding(finding)
                     return
+                except Exception as exc:
+                    # The fan-out boundary is the one place a broad catch belongs. Each
+                    # finding is an independent unit of work, and one of them failing --
+                    # an invalid API key, a malformed advisory, a network fault -- must
+                    # not take down the other fifty-nine. A nightly run that dies whole
+                    # because one item was unlucky is not tolerant of anything.
+                    #
+                    # Exception, never BaseException: the human-approval gate is delivered
+                    # as an interrupt, and trapping it would silently break the gate.
+                    finding.status = FindingStatus.FAILED
+                    log.exception(
+                        "run.finding_failed",
+                        finding_id=finding.id,
+                        advisory=finding.advisory_id,
+                        error=str(exc)[:200],
+                    )
+                    self.record.failed += 1
+                    await self.store.upsert_finding(finding)
+                    return
 
                 final = results.get(finding.id)
                 if final is None:

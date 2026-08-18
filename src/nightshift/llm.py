@@ -253,7 +253,10 @@ class LLMClient:
         """
         kwargs: dict[str, Any] = {}
         if thinking_level:
-            kwargs["thinking_level"] = thinking_level
+            # A request-body field, not a top-level argument. Passing it directly raises
+            # "unexpected keyword argument(s): thinking_level", which broke every
+            # backport -- the one path that has no upstream fix to fall back on.
+            kwargs["extra_body"] = {"thinking_level": thinking_level}
         return self._call(self.settings.model_reasoning, prompt, **kwargs)
 
     def summary(self) -> dict[str, Any]:
